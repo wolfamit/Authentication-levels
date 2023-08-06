@@ -1,80 +1,99 @@
-const express= require('express')
+const express = require('express')
 require('dotenv').config();
 const bodyParser = require('body-parser');
 const ejs = require('ejs');
 const mongoose = require('mongoose');
-const bcrypt = require('bcrypt');
-const saltRounds = 10;
-
+const session = require('express-session')
+const passport = require('passport');
+const passportLocalMongoose = require('passport-local-mongoose');
 const app = express();
 
 app.use(express.static('public'));
+app.set('view engine', 'ejs');
+app.use(bodyParser.urlencoded({
+    extended: true
+}));
 
-mongoose.connect("mongodb://localhost:27017/userDB" , {useNewUrlParser: true});
+
+app.use(session({
+    secret: "Our little secret.",
+    resave: false,
+    saveUninitialized: true
+}));
+
+app.use(passport.initialize());
+app.use(passport.session());
+
+mongoose.connect("mongodb://localhost:27017/userDB", { useNewUrlParser: true });
 
 const userSchema = new mongoose.Schema({
     email: String,
     password: String
 });
 
+userSchema.plugin(passportLocalMongoose);
 
-const user = new mongoose.model("User", userSchema);
+const User = new mongoose.model("User", userSchema);
 
-app.use(bodyParser.urlencoded({
-    extended: true
-}));
-app.set('view engine', 'ejs');
+passport.use(User.createStrategy());
+passport.serializeUser(User.serializeUser());
+passport.deserializeUser(User.deserializeUser());
 
 
-app.get("/",function(req, res) {
+
+app.get("/", function (req, res) {
     res.render('home')
 })
 
-app.get("/login" ,function(req, res) {
+app.get("/login", function (req, res) {
     res.render('login')
 })
 
-app.get("/register" ,function(req, res) {
+app.get("/register", function (req, res) {
     res.render('register')
 })
 
-app.post("/register", function(req, res) {
-    bcrypt.hash(req.body.password, saltRounds, function(err, hash){
-        const newUser = new user({
-            email: req.body.username,
-            password: hash
-        })
-
-        newUser.save()
-        if(newUser) res.render('secrets')    
-        else return
+app.get("/logout", function(req, res) {
+    req.logout(function(err) {
+        if (err) {
+            console.log(err);
+        }
+        res.redirect('/');
     });
-    });
-    
+});
 
-app.post("/login" ,async (req ,res)=>{
-    const username = await req.body.username;
-    const password = await req.body.password;
-
-    await user.findOne({email : username})
-    .then((user)=>{
-        bcrypt.compare(password, user.password , (err,result)=>{
-            if(result === true){
-                res.render('secrets')
-            }
-        })
+app.get("/secrets", async (req, res) => {
+    if (req.isAuthenticated()) {
+        res.render("secrets");
+    } else {
+        res.redirect('/login');
     }
-    ).catch((err)=>{
-        if(err){
-        res.status(500).render({message: err.message})
-    }})
 })
-               
-
-        
 
 
 
-app.listen(3000, function(){
+app.post("/register", async function (req, res) {
+    try {
+        await User.register({ username: req.body.username }, req.body.password);
+        passport.authenticate("local")(req, res, function () {
+            res.redirect("/secrets");
+        });
+    } catch (err) {
+        console.log("error:", err);
+        // Handle the error appropriately, for example, display an error message on the registration page.
+        res.redirect('/register'); // Redirect to the registration page on error.
+    }
+});
+
+// 
+app.post("/login", passport.authenticate("local", {
+    successRedirect: "/secrets",
+    failureRedirect: "/login",
+    failureFlash: true // Optionally enable flash messages for authentication failures
+  }));
+
+
+
+app.listen(3000, function () {
     console.log(`Server started on http://localhost:${process.env.PORT}`);
 })
