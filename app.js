@@ -1,9 +1,10 @@
 const express= require('express')
-require('dotenv').config()
-const bodyParser = require('body-parser')
+require('dotenv').config();
+const bodyParser = require('body-parser');
 const ejs = require('ejs');
 const mongoose = require('mongoose');
-const md5 = require('md5');
+const bcrypt = require('bcrypt');
+const saltRounds = 10;
 
 const app = express();
 
@@ -38,24 +39,30 @@ app.get("/register" ,function(req, res) {
 })
 
 app.post("/register", function(req, res) {
-    const newUser = new user({
-        email: req.body.username,
-        password: md5(req.body.password)
-    })
-    newUser.save()
-    if(newUser) res.render('secrets')    
-    else return
-});
+    bcrypt.hash(req.body.password, saltRounds, function(err, hash){
+        const newUser = new user({
+            email: req.body.username,
+            password: hash
+        })
+
+        newUser.save()
+        if(newUser) res.render('secrets')    
+        else return
+    });
+    });
+    
 
 app.post("/login" ,async (req ,res)=>{
     const username = await req.body.username;
-    const password = await md5(req.body.password);
+    const password = await req.body.password;
 
     await user.findOne({email : username})
     .then((user)=>{
-        if(user.password === password){
-            res.render('secrets')
-        }
+        bcrypt.compare(password, user.password , (err,result)=>{
+            if(result === true){
+                res.render('secrets')
+            }
+        })
     }
     ).catch((err)=>{
         if(err){
